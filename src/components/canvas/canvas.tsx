@@ -12,7 +12,7 @@ const CanvasData = () => {
       <Canvas
         dpr={[1, 2]}
         shadows={{ type: THREE.PCFShadowMap }}
-        camera={{ near: 0.1, far: 2000, fov: 25 }}
+        camera={{ near: 0.1, far: 2000, fov: 25, position: [0, 0, 5] }}
         gl={{
           antialias: true,
           toneMapping: THREE.ACESFilmicToneMapping,

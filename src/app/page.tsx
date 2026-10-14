@@ -47,7 +47,7 @@ export default function Home() {
           <CanvasData />
 
           {/* Clinical Sections Layer */}
-          <div className="relative z-10 w-full">
+          <div className="relative w-full">
             {/* 2. What We Treat ("Your body is the story") */}
             <TreatmentSection />
 

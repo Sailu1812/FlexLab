@@ -14,7 +14,6 @@ export default function ServicesSection({ onOpenBooking }: ServicesSectionProps)
   const { openBooking } = useBooking();
   const handleBooking = onOpenBooking || openBooking;
   const [activeIndex, setActiveIndex] = useState(0);
-  const [orthoProgress, setOrthoProgress] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const isReducedMotion = useRef(false);
 
@@ -22,17 +21,20 @@ export default function ServicesSection({ onOpenBooking }: ServicesSectionProps)
 
   const handleSelectDiscipline = (index: number) => {
     setActiveIndex(index);
-    const s = SERVICES[index];
+  };
+
+  useEffect(() => {
+    const s = SERVICES[activeIndex];
     if (s && typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('flexlab-discipline-select', {
-          detail: { index, cameraAngle: s.cameraAngle }
+          detail: { index: activeIndex, cameraAngle: s.cameraAngle }
         })
       );
     }
-  };
+  }, [activeIndex]);
 
-  // Helper for anatomical highlight position and pulsing indicator on body
+  // Helper for anatomical highlight position and pulsing indicator on body (matched to Demo)
   const getHighlightDetails = (region: ServiceItem['highlightRegion']) => {
     switch (region) {
       case 'knee-hip-shoulder':
@@ -130,15 +132,6 @@ export default function ServicesSection({ onOpenBooking }: ServicesSectionProps)
         onLeaveBack: () => {
           window.dispatchEvent(new CustomEvent('flexlab-ortho-active', { detail: { active: false } }));
         },
-        onUpdate: (self) => {
-          const p = self.progress;
-          setOrthoProgress(p);
-          window.dispatchEvent(
-            new CustomEvent('flexlab-ortho-sync', {
-              detail: { progress: p }
-            })
-          );
-        },
       });
     }, container);
 
@@ -205,10 +198,10 @@ export default function ServicesSection({ onOpenBooking }: ServicesSectionProps)
           })}
         </div>
 
-        {/* Main Console Card (Fits within viewport height) */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-center rounded-2xl lg:rounded-3xl bg-[#fff5e8] border border-[#ead8c3] p-4 sm:p-5 lg:p-6 shadow-[0_8px_32px_rgba(36,25,27,0.03)] overflow-hidden">
+        {/* Main Console Card (Matched with Demo's 2-column balanced structure) */}
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-8 items-center rounded-2xl lg:rounded-3xl bg-[#fff5e8] border border-[#ead8c3] p-4 sm:p-5 lg:p-6 shadow-[0_8px_32px_rgba(36,25,27,0.03)] overflow-hidden">
           {/* Left Column: Discipline Profile & Clinical Specifications */}
-          <div className="lg:col-span-7 flex flex-col justify-between h-full space-y-3">
+          <div className="lg:col-span-6 flex flex-col justify-between h-full space-y-3">
             <div>
               {/* Profile Header Meta */}
               <div className="flex items-center justify-between pb-2.5 border-b border-[#ead8c3]">
@@ -282,32 +275,6 @@ export default function ServicesSection({ onOpenBooking }: ServicesSectionProps)
                 </div>
               </div>
 
-              {/* Targeted Anatomical Axis / Beacons in DISCIPLINE PROFILE card */}
-              <div className="p-2.5 rounded-xl bg-[#fffaf2]/90 border border-[#ead8c3] mb-2.5">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-[var(--taupe)] mb-1.5 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <Target size={12} className="text-[var(--crimson)]" />
-                    <span>Targeted Anatomical Axis (Body Beacons)</span>
-                  </span>
-                  <span className="text-[var(--crimson-dark)] font-bold text-[10px]">
-                    {highlight.points.length} Anatomical Targets
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {highlight.points.map((pt, idx) => (
-                    <div
-                      key={idx}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#fff5e8] border border-[#ead8c3] text-[11px] font-mono text-[var(--ink)] font-semibold shadow-2xs"
-                    >
-                      <span className="w-4 h-4 rounded-full bg-[var(--crimson)] text-[#fffaf2] text-[9px] flex items-center justify-center font-bold">
-                        {idx + 1}
-                      </span>
-                      <span>{pt.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {/* Clinical Protocol Standard */}
               <div className="px-3 py-2 rounded-xl bg-[#fbeddc] border border-[#ead8c3] text-xs font-mono text-[var(--crimson-dark)] flex items-center gap-2.5">
                 <Activity size={14} className="text-[var(--crimson)] shrink-0" />
@@ -357,107 +324,61 @@ export default function ServicesSection({ onOpenBooking }: ServicesSectionProps)
             </div>
           </div>
 
-          {/* Right Column: Visual Stage / 3D Model Framing */}
-          <div className="lg:col-span-5 relative flex flex-col items-center justify-center h-full">
-            {/* Visual Frame HUD (Image removed so 3D muscular model is fully visible) */}
-            <div className="relative w-full max-w-[340px] sm:max-w-[380px] aspect-[3/4] max-h-[360px] lg:max-h-[390px] rounded-2xl overflow-hidden bg-[#fffaf2]/80 border border-[#ead8c3] p-3 shadow-xs flex items-center justify-center">
+          {/* Right Column: Anatomical Figure Highlight System (Matched to Demo structure) */}
+          <div className="lg:col-span-6 relative flex flex-col items-center justify-center h-full">
+            {/* Perspective & Focus Banner (from Demo) */}
+            <div className="w-full max-w-[360px] sm:max-w-[400px] flex items-center justify-between text-xs font-mono text-[var(--taupe)] pb-2 mb-2 border-b border-[#ead8c3]">
+              <span className="text-[var(--crimson-dark)] font-bold">
+                {highlight.label}
+              </span>
+              <span>Anatomical Projection</span>
+            </div>
+
+            {/* Visual Frame - 3:4 Aspect Ratio Frame matching Demo where 3D Muscular Model is centered */}
+            <div
+              id="services-stage-card"
+              className="relative w-full max-w-[360px] sm:max-w-[400px] aspect-[3/4] rounded-2xl lg:rounded-3xl overflow-hidden bg-[#fffaf2]/90 border border-[#ead8c3] shadow-md flex items-center justify-center"
+            >
               {/* Soft warm halo backdrop */}
-              <div className="absolute inset-0 rounded-full bg-[#fbeddc] filter blur-2xl scale-90 pointer-events-none" />
+              <div className="absolute inset-0 rounded-full bg-[#fbeddc] filter blur-3xl scale-90 pointer-events-none" />
 
               {/* Status Header HUD */}
-              <div className="absolute top-3 left-3 right-3 z-20 pointer-events-none flex items-center justify-between">
-                <span className="px-2.5 py-1 rounded-full bg-[#fffaf2]/95 backdrop-blur-sm border border-[#ead8c3] text-[9px] font-mono text-[var(--crimson-dark)] font-bold shadow-xs flex items-center gap-1.5">
+              <div className="absolute top-3 left-3 right-3 z-40 pointer-events-none flex items-center justify-between">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#fffaf2]/95 backdrop-blur-sm border border-[#ead8c3] text-[10px] font-mono text-[var(--crimson-dark)] font-bold shadow-xs flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-[var(--crimson)] animate-pulse" />
                   {activeService.title.toUpperCase()} • 3D
                 </span>
-                <span className="text-[10px] font-mono font-bold text-[var(--crimson)] px-2 py-0.5 rounded-full bg-[#fffaf2]/90 border border-[#ead8c3]">
-                  {Math.round(orthoProgress * 720)}° ROTATION
+                <span className="text-[10px] font-mono font-bold text-[var(--crimson-dark)] px-2.5 py-0.5 rounded-full bg-[#fffaf2]/95 backdrop-blur-sm border border-[#ead8c3] shadow-xs">
+                  {activeService.cameraAngle} View
                 </span>
               </div>
 
-              {/* Pulsing Target Points & Anatomical Labels on 3D Model */}
-              {highlight.points.map((pt, idx) => {
-                const isLeft = parseInt(pt.left) < 48;
-                return (
-                  <div
-                    key={idx}
-                    className={`absolute z-30 flex items-center gap-1.5 transition-all duration-500 pointer-events-none ${
-                      isLeft ? 'flex-row-reverse' : 'flex-row'
-                    }`}
-                    style={{
-                      top: pt.top,
-                      left: pt.left,
-                      transform: isLeft ? 'translate(-100%, -50%)' : 'translate(0, -50%)',
-                    }}
-                  >
-                    {/* Target Pin Node */}
-                    <div className="relative flex items-center justify-center shrink-0">
-                      <span className="w-4 h-4 rounded-full bg-[var(--crimson)]/35 animate-ping absolute" />
-                      <span className="w-2.5 h-2.5 rounded-full bg-[var(--crimson)] border border-[#fffaf2] shadow-sm relative z-10" />
-                    </div>
-
-                    {/* Connecting Tick Line */}
-                    <div className="w-2.5 h-[1.5px] bg-[var(--crimson)] shrink-0" />
-
-                    {/* Label Badge with Number and Full Anatomical Label */}
-                    <div className="bg-[#fffaf2]/95 backdrop-blur-md border border-[#ead8c3] px-2 py-0.5 rounded-md shadow-xs flex items-center gap-1.5 shrink-0">
-                      <span className="w-3.5 h-3.5 rounded-full bg-[var(--crimson)] text-[#fffaf2] text-[8px] flex items-center justify-center font-bold shrink-0">
-                        {idx + 1}
-                      </span>
-                      <span className="text-[10px] font-mono font-bold text-[var(--ink)] leading-tight whitespace-nowrap">
-                        {pt.label}
-                      </span>
-                    </div>
+              {/* Pulsing Anatomical Highlight Points (Placed on top of 3D Model with z-50) */}
+              {highlight.points.map((pt, idx) => (
+                <div
+                  key={idx}
+                  className="absolute z-50 flex items-center gap-2 transition-all duration-500 group pointer-events-none -translate-y-1/2 -translate-x-1.5"
+                  style={{ top: pt.top, left: pt.left, zIndex: 50 }}
+                >
+                  <div className="relative flex items-center justify-center">
+                    <span className="w-4 h-4 rounded-full bg-[var(--crimson)]/30 animate-ping absolute" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-[var(--crimson)] border border-[#fffaf2] shadow-md relative z-50" />
                   </div>
-                );
-              })}
-
-              {/* Frame Footer Datum HUD */}
-              <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center text-[9px] font-mono text-[var(--taupe)] pointer-events-none z-20">
-                <span className="flex items-center gap-1">
-                  <RotateCw size={10} className="text-[var(--crimson)]" />
-                  Perspective: {activeService.cameraAngle}
-                </span>
-                <span className="text-[var(--crimson-dark)] font-bold">
-                  Interactive 3D Active
-                </span>
-              </div>
+                  <div className="bg-[#fffaf2]/95 backdrop-blur-sm border border-[#ead8c3] px-2.5 py-1 rounded-lg shadow-sm text-[10px] font-mono text-[var(--ink)] font-semibold whitespace-nowrap pointer-events-none relative z-50">
+                    {pt.label}
+                  </div>
+                </div>
+              ))}
             </div>
 
-            {/* Anatomical Labels Card on Right Side */}
-            <div className="w-full max-w-[340px] sm:max-w-[380px] mt-2 px-3 py-2 rounded-xl bg-[#fffaf2] border border-[#ead8c3] shadow-xs">
-              <div className="text-[10px] font-mono uppercase tracking-wider text-[var(--taupe)] mb-1.5 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Target size={11} className="text-[var(--crimson)]" />
-                  <span>Targeted Point Labels</span>
-                </span>
-                <span className="text-[var(--crimson-dark)] font-bold text-[9px]">{highlight.points.length} Active Nodes</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {highlight.points.map((pt, idx) => (
-                  <div
-                    key={idx}
-                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#fff5e8] border border-[#ead8c3] text-[10px] font-mono text-[var(--ink)] font-semibold shadow-2xs"
-                  >
-                    <span className="w-3.5 h-3.5 rounded-full bg-[var(--crimson)] text-[#fffaf2] text-[8px] flex items-center justify-center font-bold">
-                      {idx + 1}
-                    </span>
-                    <span className="truncate">{pt.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Bottom Compact Rotation Status Bar */}
-            <div className="w-full max-w-[340px] sm:max-w-[380px] mt-1.5 px-3 py-1.5 rounded-xl bg-[#fffaf2] border border-[#ead8c3] flex items-center justify-between text-[11px] font-mono text-[var(--ink)]/80">
-              <span className="flex items-center gap-1.5 truncate">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--crimson)] shrink-0" />
-                <span className="truncate">
-                  3D Muscular Model • Scroll to spin 2 rounds (720°)
-                </span>
+            {/* Bottom Camera / Rotation Status (from Demo) */}
+            <div className="w-full max-w-[360px] sm:max-w-[400px] mt-2.5 p-2.5 rounded-2xl bg-[#fffaf2] border border-[#ead8c3] flex items-center justify-between text-xs font-mono text-[var(--ink)]/80">
+              <span className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--crimson)]" />
+                <span>Targeted Tissue Focus</span>
               </span>
-              <span className="text-[var(--crimson)] font-bold shrink-0 ml-2">
-                {Math.round(orthoProgress * 720)}°
+              <span className="text-[var(--crimson)] font-bold">
+                {activeService.cameraAngle} Alignment
               </span>
             </div>
           </div>

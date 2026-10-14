@@ -90,11 +90,11 @@ export default function PeelingLayersSection() {
                   <span>3D Real-Time Depth Scanner</span>
                 </span>
                 <span className="text-[var(--crimson-dark)] font-bold">
-                  {peelPercent >= 75
-                    ? '100% SKELETON REVEALED'
-                    : peelPercent >= 40
-                    ? 'OSTEO MATRIX REVEALED'
-                    : `Depth: ${Math.round(peelPercent)}% Scanned`}
+                  {peelPercent >= 50
+                    ? '02 SKELETON FULLY REVEALED'
+                    : peelPercent >= 25
+                    ? '01 MUSCULAR DISAPPEARING'
+                    : '01 MUSCULAR 360° ROTATION'}
                 </span>
               </div>
 
@@ -113,8 +113,8 @@ export default function PeelingLayersSection() {
                   className="w-full accent-[var(--crimson)] h-2 bg-[#ead8c3] rounded-lg cursor-pointer"
                 />
                 <div className="flex justify-between text-[10px] font-mono text-[var(--taupe)] pt-1">
-                  <span>Contractile Musculature</span>
-                  <span className="text-[var(--crimson-dark)] font-semibold">Deep Skeletal Matrix</span>
+                  <span>01 Muscular 360° & Disappear</span>
+                  <span className="text-[var(--crimson-dark)] font-semibold">02 Skeleton Fully Revealed</span>
                 </div>
               </div>
             </div>
@@ -137,13 +137,13 @@ export default function PeelingLayersSection() {
             </div>
           </div>
 
-          {/* Right Column: Open 3D Stage (Scanning box removed, model floats freely & prominently) */}
+          {/* Right Column: Open 3D Stage */}
           <div className="lg:col-span-6 flex flex-col items-center justify-between relative min-h-[580px] pointer-events-none select-none">
             {/* Top Status Datum */}
             <div className="w-full flex items-center justify-between px-2 pt-2 z-20">
               <span className="px-3.5 py-1.5 rounded-full bg-[#fffaf2]/90 backdrop-blur-md border border-[#ead8c3] text-[10px] font-mono text-[var(--crimson-dark)] font-bold shadow-xs flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${peelPercent >= 75 ? 'bg-emerald-600' : 'bg-[var(--crimson)] animate-pulse'}`} />
-                {peelPercent >= 75 ? '100% SKELETON REVEALED' : peelPercent >= 40 ? 'OSTEO REVEAL SCAN' : 'ANATOMICAL SCAN'}
+                <span className={`w-2 h-2 rounded-full ${peelPercent >= 50 ? 'bg-emerald-600' : 'bg-[var(--crimson)] animate-pulse'}`} />
+                {peelPercent >= 50 ? '02 SKELETON FULLY REVEALED' : peelPercent >= 25 ? '01 MUSCULAR TRANSITION' : '01 MUSCULAR 360° SCAN'}
               </span>
               <span className="px-3 py-1 rounded-full bg-[#fffaf2]/80 backdrop-blur-md border border-[#ead8c3] text-[11px] font-mono font-bold text-[var(--crimson)] shadow-xs">
                 {Math.round(peelPercent)}% DEPTH
@@ -156,11 +156,11 @@ export default function PeelingLayersSection() {
             {/* Bottom guide text */}
             <div className="w-full flex items-center justify-center pb-2 z-20">
               <div className="text-xs font-mono text-[var(--taupe)] flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#fffaf2]/80 backdrop-blur-md border border-[#ead8c3] shadow-xs">
-                <span className={`w-1.5 h-1.5 rounded-full ${peelPercent >= 75 ? 'bg-emerald-500' : 'bg-[var(--crimson)] animate-warm-pulse'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${peelPercent >= 50 ? 'bg-emerald-500' : 'bg-[var(--crimson)] animate-warm-pulse'}`} />
                 <span>
-                  {peelPercent >= 75
-                    ? 'Skeleton revealed • Scroll down into Specialized Care ↓'
-                    : 'Pinned area • Scroll to spin 360° & reveal deep skeleton'}
+                  {peelPercent >= 50
+                    ? 'Skeleton fully revealed • Scroll down into Specialized Care ↓'
+                    : 'Muscular 1 round rotation & disappear • Skeleton reveals next ↓'}
                 </span>
               </div>
             </div>

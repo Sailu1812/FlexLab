@@ -8,11 +8,12 @@ import { useThree, useFrame } from '@react-three/fiber';
 import { useState, useEffect, useRef } from 'react';
 
 export default function Scene() {
-  const { scene, animations } = useGLTF("./body.glb");
+  const { scene, animations } = useGLTF("/body.glb");
   const { actions, mixer } = useAnimations(animations, scene);
   const { camera } = useThree();
 
   const modelRef = useRef<THREE.Group>(null);
+  const innerModelRef = useRef<THREE.Group>(null);
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
 
@@ -53,9 +54,9 @@ export default function Scene() {
     });
   };
 
-  // Sequential, non-overlapping reveal curves for Peeling Layers:
-  // p = 0: 100% muscular body, skeleton hidden
-  // p = 1: 100% osteological skeleton, muscular body hidden
+  // Sequential phase transition for Peeling Layers:
+  // Phase 1 (p < 0.5): Muscular model rotates 1 full round (0 -> 2*PI) and disappears (opacity 1 -> 0). Skeleton is 100% hidden.
+  // Phase 2 (p >= 0.5): Muscular model completely disappeared (0). Skeleton model fully appears (opacity 0 -> 1) and completes 1 full round (0 -> 2*PI).
   const applySkeletonBlend = (val: number) => {
     const p = Math.max(0, Math.min(1, val));
     currentBlendRef.current = p;
@@ -63,37 +64,49 @@ export default function Scene() {
     let muscleOpacity = 0;
     let skeletonOpacity = 0;
 
-    if (p <= 0.20) {
+    // Seamless revealing transition around the 1st round completion (p: 0.38 -> 0.52):
+    // p < 0.38: Muscular model 100% visible, rotating 1st round. Skeleton hidden.
+    // 0.38 <= p <= 0.52: Muscular model peels away (1 -> 0) while Skeleton reveals from within (0 -> 1)
+    // p > 0.52: Muscular model completely disappeared (0). Skeleton 100% visible, showcasing full osseous matrix.
+    if (p < 0.38) {
       muscleOpacity = 1;
       skeletonOpacity = 0;
-    } else if (p <= 0.50) {
-      muscleOpacity = 1 - ((p - 0.20) / 0.30);
-      skeletonOpacity = p > 0.35 ? ((p - 0.35) / 0.15) * 0.3 : 0;
-    } else if (p <= 0.80) {
-      muscleOpacity = 0;
-      skeletonOpacity = 0.3 + ((p - 0.50) / 0.30) * 0.7;
+    } else if (p <= 0.52) {
+      const t = (p - 0.38) / 0.14;
+      muscleOpacity = 1 - t;
+      skeletonOpacity = t;
     } else {
       muscleOpacity = 0;
       skeletonOpacity = 1;
     }
 
-    // Apply to muscular model
-    if (origMeshRef.current) {
-      const isMuscleVisible = muscleOpacity > 0.005;
-      origMeshRef.current.visible = isMuscleVisible;
-      const mat: any = origMeshRef.current.material;
-      if (Array.isArray(mat)) {
-        mat.forEach((m: any) => {
-          m.transparent = true;
-          m.opacity = muscleOpacity;
-          m.depthWrite = muscleOpacity > 0.8;
-        });
-      } else if (mat) {
-        mat.transparent = true;
-        mat.opacity = muscleOpacity;
-        mat.depthWrite = muscleOpacity > 0.8;
-      }
+    // Apply to muscular model (both root group and all underlying meshes)
+    const isMuscleVisible = muscleOpacity > 0.005;
+
+    if (modelRef.current) {
+      modelRef.current.visible = isMuscleVisible;
     }
+    if (innerModelRef.current) {
+      innerModelRef.current.visible = isMuscleVisible;
+    }
+
+    scene.traverse((child: any) => {
+      if (child.isMesh || child.isSkinnedMesh) {
+        child.visible = isMuscleVisible;
+        const mat: any = child.material;
+        if (Array.isArray(mat)) {
+          mat.forEach((m: any) => {
+            m.transparent = true;
+            m.opacity = muscleOpacity;
+            m.depthWrite = muscleOpacity > 0.8;
+          });
+        } else if (mat) {
+          mat.transparent = true;
+          mat.opacity = muscleOpacity;
+          mat.depthWrite = muscleOpacity > 0.8;
+        }
+      }
+    });
 
     // Apply to skeleton model
     if (skeletonMatRef.current) {
@@ -119,6 +132,31 @@ export default function Scene() {
     }
   };
 
+  const updatePeelRotation = (val: number) => {
+    const p = Math.max(0, Math.min(1, val));
+    if (p < 0.50) {
+      // Muscular model completes 1 full 360° round
+      const rot = (p / 0.50) * Math.PI * 2;
+      if (modelRef.current) {
+        modelRef.current.rotation.y = rot;
+      }
+      // Skeleton rotates in exact lockstep as it reveals from within the muscle
+      if (skeletonGroupRef.current) {
+        skeletonGroupRef.current.rotation.y = rot;
+      }
+    } else {
+      // Muscular model stays at 360° (front) while disappeared
+      if (modelRef.current) {
+        modelRef.current.rotation.y = Math.PI * 2;
+      }
+      // Skeleton model continues its full 360° showcase rotation
+      const skeletonRot = ((p - 0.50) / 0.50) * Math.PI * 2;
+      if (skeletonGroupRef.current) {
+        skeletonGroupRef.current.rotation.y = skeletonRot;
+      }
+    }
+  };
+
   const setSkeletonBlend = (val: number) => {
     applySkeletonBlend(val);
   };
@@ -128,28 +166,12 @@ export default function Scene() {
     const handleSync = (e: any) => {
       const p = e.detail?.progress ?? 0;
       setSkeletonBlend(p);
-      if (modelRef.current) {
-        modelRef.current.rotation.y = p * Math.PI * 2;
-      }
-      if (skeletonGroupRef.current) {
-        skeletonGroupRef.current.rotation.y = p * Math.PI * 2;
-      }
+      updatePeelRotation(p);
     };
     window.addEventListener('flexlab-peel-sync', handleSync);
     return () => window.removeEventListener('flexlab-peel-sync', handleSync);
   }, []);
 
-  // Listen for sync events from ServicesSection (Orthopedic Rehab 2-round spin)
-  useEffect(() => {
-    const handleOrthoSync = (e: any) => {
-      const p = e.detail?.progress ?? 0;
-      if (modelRef.current) {
-        modelRef.current.rotation.y = Math.PI * 2 + p * Math.PI * 4;
-      }
-    };
-    window.addEventListener('flexlab-ortho-sync', handleOrthoSync);
-    return () => window.removeEventListener('flexlab-ortho-sync', handleOrthoSync);
-  }, []);
 
   // Listen for active state from ServicesSection so skeleton strictly disappears in Services
   useEffect(() => {
@@ -204,24 +226,22 @@ export default function Scene() {
   useEffect(() => {
     let targetMesh: any = null;
     scene.traverse((child: any) => {
-      if (child.isSkinnedMesh) {
+      if (child.isMesh || child.isSkinnedMesh) {
         targetMesh = child;
+        if (Array.isArray(child.material)) {
+          child.material.forEach((m: any) => {
+            m.transparent = true;
+            m.opacity = 1;
+          });
+        } else if (child.material) {
+          child.material.transparent = true;
+          child.material.opacity = 1;
+        }
       }
     });
 
     if (targetMesh && !origMeshRef.current) {
       origMeshRef.current = targetMesh;
-
-      // Ensure original muscle material supports opacity transitions
-      if (Array.isArray(targetMesh.material)) {
-        targetMesh.material.forEach((m: any) => {
-          m.transparent = true;
-          m.opacity = 1;
-        });
-      } else if (targetMesh.material) {
-        targetMesh.material.transparent = true;
-        targetMesh.material.opacity = 1;
-      }
     }
 
     // Load authentic human skeleton.obj model from public
@@ -255,21 +275,22 @@ export default function Scene() {
           }
         });
 
-        // Compute exact bounding box and align perfectly with body.glb (1.96m height, center at Y=0.007)
+        // Anatomical fit inside muscular model (height: 1.85m, feet at Y=0.03m, skull at Y=1.88m)
         const skeletonBox = new THREE.Box3().setFromObject(obj);
         const skeletonSize = new THREE.Vector3();
         skeletonBox.getSize(skeletonSize);
         const skeletonCenter = new THREE.Vector3();
         skeletonBox.getCenter(skeletonCenter);
 
-        const targetHeight = 1.96;
+        const targetHeight = 1.85;
         const s = targetHeight / (skeletonSize.y || 66.95);
         obj.scale.set(s, s, s);
 
-        // Center X, Z and align Y center with body.glb (0.007)
+        // Align X and Z center to 0, align feet base to Y=0.03 inside muscular foot
+        const skelMinY = skeletonBox.min.y;
         obj.position.set(
           -skeletonCenter.x * s,
-          0.007 - skeletonCenter.y * s,
+          0.03 - skelMinY * s,
           -skeletonCenter.z * s
         );
 
@@ -285,26 +306,76 @@ export default function Scene() {
     );
   }, [scene]);
 
-  useFrame(() => {
+  // Calculate exact Three.js world coordinates matching the center of #services-stage-card
+  const getServicesCardCenter = () => {
+    if (typeof window === 'undefined') return { x: 0.882, y: -0.74, scale: 0.54 };
+    const card = document.getElementById('services-stage-card');
+    if (!card) return { x: 0.882, y: -0.74, scale: 0.54 };
+    const rect = card.getBoundingClientRect();
+    const cardCenterX = rect.left + rect.width / 2;
+    const cardCenterY = rect.top + rect.height / 2;
+
+    const distance = 4.9; // camera.position.z (5.0) - model.position.z (0.1)
+    const vFov = (25 * Math.PI) / 180;
+    const planeHeight = 2 * Math.tan(vFov / 2) * distance;
+    const planeWidth = planeHeight * (window.innerWidth / window.innerHeight);
+
+    const worldX = (cardCenterX / window.innerWidth - 0.5) * planeWidth;
+    const worldCenterY = -(cardCenterY / window.innerHeight - 0.5) * planeHeight;
+
+    // Calculate scale so the model height is exactly 82% of the stage card height
+    const cardWorldHeight = (rect.height / window.innerHeight) * planeHeight;
+    const isMobile = window.innerWidth < 768;
+    const targetModelHeight = (isMobile ? 0.78 : 0.82) * cardWorldHeight;
+    const computedScale = targetModelHeight / 1.88;
+
+    // Model height at computedScale is targetModelHeight. Model pivot is at feet:
+    const feetY = worldCenterY - targetModelHeight / 2;
+    return { x: worldX, y: feetY, scale: computedScale };
+  };
+
+  useFrame((state, delta) => {
+    // Subtle organic breathing float on Y
+    if (innerModelRef.current) {
+      innerModelRef.current.position.y = Math.sin(state.clock.elapsedTime * 1.5) * 0.015;
+
+      // Gentle interactive mouse parallax tilt
+      const targetRotY = state.pointer.x * 0.04;
+      const targetRotX = -state.pointer.y * 0.02;
+      innerModelRef.current.rotation.y = THREE.MathUtils.lerp(innerModelRef.current.rotation.y, targetRotY, Math.min(1, delta * 3));
+      innerModelRef.current.rotation.x = THREE.MathUtils.lerp(innerModelRef.current.rotation.x, targetRotX, Math.min(1, delta * 3));
+    }
+
     if (isInServices) {
       // In Services (Seven Clinical Disciplines), strictly ensure muscular model is 100% visible and skeleton is 100% hidden
       if (skeletonGroupRef.current) skeletonGroupRef.current.visible = false;
       if (skeletonObj) skeletonObj.visible = false;
-      if (origMeshRef.current) {
-        origMeshRef.current.visible = true;
-        const mat: any = origMeshRef.current.material;
-        if (Array.isArray(mat)) {
-          mat.forEach((m: any) => {
-            m.transparent = true;
-            m.opacity = 1;
-            m.depthWrite = true;
-          });
-        } else if (mat) {
-          mat.transparent = true;
-          mat.opacity = 1;
-          mat.depthWrite = true;
-        }
+      if (modelRef.current) {
+        modelRef.current.visible = true;
+        const target = getServicesCardCenter();
+        modelRef.current.position.x = target.x;
+        modelRef.current.position.y = target.y;
+        modelRef.current.position.z = 0.1;
+        modelRef.current.scale.set(target.scale, target.scale, target.scale);
       }
+      if (innerModelRef.current) innerModelRef.current.visible = true;
+      scene.traverse((child: any) => {
+        if (child.isMesh || child.isSkinnedMesh) {
+          child.visible = true;
+          const mat: any = child.material;
+          if (Array.isArray(mat)) {
+            mat.forEach((m: any) => {
+              m.transparent = true;
+              m.opacity = 1;
+              m.depthWrite = true;
+            });
+          } else if (mat) {
+            mat.transparent = true;
+            mat.opacity = 1;
+            mat.depthWrite = true;
+          }
+        }
+      });
     } else {
       applySkeletonBlend(currentBlendRef.current);
     }
@@ -319,39 +390,49 @@ export default function Scene() {
     if (!modelRef.current || !camera) return;
 
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const heroX = isMobile ? 0 : 0.85;
+    const heroY = -0.85;
+    const heroScale = isMobile ? 0.58 : 0.68;
 
-    // Initial position on load (refined right placement, scale 0.68)
-    modelRef.current.position.set(isMobile ? 0 : 1.18, -0.85, 0);
+    // Initial position on load (properly visible in hero viewport)
+    modelRef.current.position.set(heroX, heroY, 0);
+    modelRef.current.scale.set(heroScale, heroScale, heroScale);
     modelRef.current.rotation.set(0, 0, 0);
 
     if (skeletonGroupRef.current) {
-      skeletonGroupRef.current.position.set(isMobile ? 0 : 0.65, isMobile ? -0.15 : -0.10, 0.1);
+      skeletonGroupRef.current.position.set(isMobile ? 0 : 0.65, -0.85, 0.1);
       skeletonGroupRef.current.rotation.set(0, 0, 0);
-      skeletonGroupRef.current.scale.set(isMobile ? 0.65 : 0.72, isMobile ? 0.65 : 0.72, isMobile ? 0.65 : 0.72);
+      skeletonGroupRef.current.scale.set(heroScale, heroScale, heroScale);
       skeletonGroupRef.current.visible = false;
     }
 
     // 1. SECTION 1 -> SECTION 2 (Hero to Anatomy Engine)
-    // Model glides to position; transitions into shoulder and upper kinetic mobility
     const tl1 = gsap.timeline({
       scrollTrigger: {
         trigger: "#section1",
         endTrigger: "#section2",
         start: "top top",
         end: "top top",
-        scrub: 1.2,
-        onEnter: () => transitionToAnimation('solder', 0.6),
-        onEnterBack: () => transitionToAnimation('solder', 0.6),
+        scrub: 1.4,
         onLeaveBack: () => {
-          transitionToAnimation('idel', 0.6);
           setSkeletonBlend(0);
+          if (modelRef.current) {
+            modelRef.current.position.set(heroX, heroY, 0);
+            modelRef.current.scale.set(heroScale, heroScale, heroScale);
+            modelRef.current.rotation.set(0, 0, 0);
+          }
         },
       },
     });
 
     tl1
-      .to(
+      .fromTo(
         modelRef.current.position,
+        {
+          x: heroX,
+          y: heroY,
+          z: 0,
+        },
         {
           x: isMobile ? 0 : 0.22,
           y: -0.8,
@@ -360,8 +441,13 @@ export default function Scene() {
         },
         0
       )
-      .to(
+      .fromTo(
         modelRef.current.rotation,
+        {
+          x: 0,
+          y: 0,
+          z: 0,
+        },
         {
           y: -0.2,
           ease: "none",
@@ -370,17 +456,13 @@ export default function Scene() {
       );
 
     // 2. SECTION 2 -> SECTION 3 (Anatomy Engine to Joint Intelligence)
-    // Model glides to center; transitions into dynamic Arm multi-joint articulation
     const tl2 = gsap.timeline({
       scrollTrigger: {
         trigger: "#section2",
         endTrigger: "#section3",
         start: "top top",
         end: "top top",
-        scrub: 1.2,
-        onEnter: () => transitionToAnimation('Arm', 0.6),
-        onEnterBack: () => transitionToAnimation('Arm', 0.6),
-        onLeaveBack: () => transitionToAnimation('solder', 0.6),
+        scrub: 1.4,
       },
     });
 
@@ -405,17 +487,13 @@ export default function Scene() {
       );
 
     // 3. SECTION 3 -> WHAT WE TREAT ("Your body is the story")
-    // Glides model directly inside the left stage frame; plays authentic Squat kinetic dynamics
     const tl3 = gsap.timeline({
       scrollTrigger: {
         trigger: "#section3",
         endTrigger: "#what-we-treat",
         start: "top top",
         end: "top top",
-        scrub: 1.2,
-        onEnter: () => transitionToAnimation('Squat', 0.6),
-        onEnterBack: () => transitionToAnimation('Squat', 0.6),
-        onLeaveBack: () => transitionToAnimation('Arm', 0.6),
+        scrub: 1.4,
       },
     });
 
@@ -450,17 +528,13 @@ export default function Scene() {
       );
 
     // 4. WHAT WE TREAT -> OUR METHOD (The FlexLab Method)
-    // Model holds steady inside the left card while viewing; then glides to the right and plays Flexing strength animation
     const tl4 = gsap.timeline({
       scrollTrigger: {
         trigger: "#what-we-treat",
         endTrigger: "#our-method",
         start: "bottom 95%",
         end: "top top",
-        scrub: 1.2,
-        onEnter: () => transitionToAnimation('Flexing', 0.6),
-        onEnterBack: () => transitionToAnimation('Squat', 0.6),
-        onLeaveBack: () => transitionToAnimation('Squat', 0.6),
+        scrub: 1.4,
       },
     });
 
@@ -501,13 +575,9 @@ export default function Scene() {
         endTrigger: "#peeling-layers",
         start: "top top",
         end: "top top",
-        scrub: 1.2,
+        scrub: 1.4,
         onEnter: () => {
-          transitionToAnimation('Flexing', 0.6);
           setSkeletonBlend(0);
-        },
-        onEnterBack: () => {
-          transitionToAnimation('Flexing', 0.6);
         },
       },
     });
@@ -554,11 +624,9 @@ export default function Scene() {
         scrub: 1,
         onEnter: () => {
           setIsInServices(false);
-          transitionToAnimation('idel', 0.5);
         },
         onEnterBack: () => {
           setIsInServices(false);
-          transitionToAnimation('idel', 0.5);
         },
         onLeave: () => {
           setIsInServices(false);
@@ -566,7 +634,7 @@ export default function Scene() {
         onLeaveBack: () => {
           setIsInServices(false);
           setSkeletonBlend(0);
-          transitionToAnimation('Flexing', 0.4);
+          updatePeelRotation(0);
         },
       },
     });
@@ -595,35 +663,29 @@ export default function Scene() {
         },
         0
       )
-      // 360° spin while peeling away muscle to reveal 100% skeleton
+      // Muscular model completes 1 round and disappears; after that skeleton model fully appears and rotates
       .to(
         scanState,
         {
-          rotY: Math.PI * 2,
           progress: 1,
           ease: "none",
           duration: 1,
           onUpdate: () => {
             setSkeletonBlend(scanState.progress);
-            if (modelRef.current) {
-              modelRef.current.rotation.y = scanState.rotY;
-            }
-            if (skeletonGroupRef.current) {
-              skeletonGroupRef.current.rotation.y = scanState.rotY;
-            }
+            updatePeelRotation(scanState.progress);
           },
         },
         0
       );
 
-    // Skeleton model positioned independently higher up towards top where it was before and fully visible!
+    // Skeleton model positioned in exact same frame and scale as muscular model for close anatomical reveal!
     if (skeletonGroupRef.current) {
       tlScan
         .to(
           skeletonGroupRef.current.position,
           {
             x: isMobile ? 0 : 0.65,
-            y: isMobile ? -0.15 : -0.10,
+            y: -0.85,
             z: 0.1,
             ease: "none",
             duration: 1,
@@ -633,9 +695,9 @@ export default function Scene() {
         .to(
           skeletonGroupRef.current.scale,
           {
-            x: isMobile ? 0.65 : 0.72,
-            y: isMobile ? 0.65 : 0.72,
-            z: isMobile ? 0.65 : 0.72,
+            x: 0.68,
+            y: 0.68,
+            z: 0.68,
             ease: "none",
             duration: 1,
           },
@@ -647,6 +709,7 @@ export default function Scene() {
     // Glides muscular model into place inside the frame while skeleton disappears smoothly
     const entryState = { blend: 1 };
     const tlOrthoEntry = gsap.timeline({
+      defaults: { immediateRender: false },
       scrollTrigger: {
         trigger: "#services",
         start: "top bottom",
@@ -657,21 +720,19 @@ export default function Scene() {
           setSkeletonBlend(0);
           if (skeletonGroupRef.current) skeletonGroupRef.current.visible = false;
           if (skeletonObj) skeletonObj.visible = false;
-          transitionToAnimation('idel', 0.6);
         },
         onEnterBack: () => {
           setIsInServices(true);
           setSkeletonBlend(0);
           if (skeletonGroupRef.current) skeletonGroupRef.current.visible = false;
           if (skeletonObj) skeletonObj.visible = false;
-          transitionToAnimation('idel', 0.6);
         },
         onLeaveBack: () => {
           setIsInServices(false);
           setSkeletonBlend(1);
+          updatePeelRotation(1);
           if (skeletonGroupRef.current) skeletonGroupRef.current.visible = true;
           if (skeletonObj) skeletonObj.visible = true;
-          transitionToAnimation('idel', 0.6);
         },
       },
     });
@@ -692,8 +753,8 @@ export default function Scene() {
       .to(
         modelRef.current.position,
         {
-          x: isMobile ? 0 : 0.85,
-          y: -0.85,
+          x: () => getServicesCardCenter().x,
+          y: () => getServicesCardCenter().y,
           z: 0.1,
           ease: "none",
         },
@@ -702,9 +763,9 @@ export default function Scene() {
       .to(
         modelRef.current.scale,
         {
-          x: 0.68,
-          y: 0.68,
-          z: 0.68,
+          x: () => getServicesCardCenter().scale,
+          y: () => getServicesCardCenter().scale,
+          z: () => getServicesCardCenter().scale,
           ease: "none",
         },
         0
@@ -712,17 +773,17 @@ export default function Scene() {
       .to(
         modelRef.current.rotation,
         {
-          y: Math.PI * 2,
+          y: Math.PI * 2 + Math.PI / 6,
           ease: "none",
         },
         0
       );
 
     // 5c. STUCK IN SEVEN CLINICAL DISCIPLINES (Pinned for 1800px)
-    // Muscular model stays idle, shifted right, and completes 2 full rounds (720° / 4*PI)
-    // while scrolling, completely clean without skeleton or floating labels!
-    const orthoState = { rotY: Math.PI * 2 };
+    // Muscular model is enlarged, perfectly centered within the stage box,
+    // and responsive to clinical discipline perspective selections.
     const tlOrtho = gsap.timeline({
+      defaults: { immediateRender: false },
       scrollTrigger: {
         trigger: "#services",
         start: "top top",
@@ -733,7 +794,11 @@ export default function Scene() {
           setSkeletonBlend(0);
           if (skeletonGroupRef.current) skeletonGroupRef.current.visible = false;
           if (skeletonObj) skeletonObj.visible = false;
-          transitionToAnimation('idel', 0.6);
+          const pos = getServicesCardCenter();
+          if (modelRef.current) {
+            modelRef.current.position.set(pos.x, pos.y, 0.1);
+            modelRef.current.scale.set(pos.scale, pos.scale, pos.scale);
+          }
         },
         onLeave: () => {
           setIsInServices(false);
@@ -743,7 +808,11 @@ export default function Scene() {
           setSkeletonBlend(0);
           if (skeletonGroupRef.current) skeletonGroupRef.current.visible = false;
           if (skeletonObj) skeletonObj.visible = false;
-          transitionToAnimation('idel', 0.6);
+          const pos = getServicesCardCenter();
+          if (modelRef.current) {
+            modelRef.current.position.set(pos.x, pos.y, 0.1);
+            modelRef.current.scale.set(pos.scale, pos.scale, pos.scale);
+          }
         },
         onLeaveBack: () => {
           setIsInServices(false);
@@ -751,45 +820,28 @@ export default function Scene() {
       },
     });
 
-    tlOrtho
-      // Keep model shifted towards little right
-      .to(
-        modelRef.current.position,
-        {
-          x: isMobile ? 0 : 0.85,
-          y: -0.85,
-          z: 0.1,
-          ease: "none",
-          duration: 1,
-        },
-        0
-      )
-      // 2 full rounds (720° / 4*PI) spin in Services!
-      .to(
-        orthoState,
-        {
-          rotY: Math.PI * 6,
-          ease: "none",
-          duration: 1,
-          onUpdate: () => {
-            if (modelRef.current) {
-              modelRef.current.rotation.y = orthoState.rotY;
-            }
-          },
-        },
-        0
-      );
+    tlOrtho.to(
+      modelRef.current.rotation,
+      {
+        y: Math.PI * 4,
+        ease: "none",
+        duration: 1,
+      },
+      0
+    );
 
     // 5d. SERVICES -> PROOF
     // Only AFTER the full 2-round spin finishes and pin releases:
     // Model moves down out of the section while scrolling!
     const tlServicesExit = gsap.timeline({
+      defaults: { immediateRender: false },
       scrollTrigger: {
         trigger: "#proof",
         start: "top bottom",
         end: "top 30%",
         scrub: 1,
         onEnter: () => setIsInServices(false),
+        onLeaveBack: () => setIsInServices(true),
       },
     });
 
@@ -804,6 +856,7 @@ export default function Scene() {
     // 6. SERVICES -> CTA & BEFORE FOOTER
     // Glides model into place right before footer and stands IDLE
     const tlCTA = gsap.timeline({
+      defaults: { immediateRender: false },
       scrollTrigger: {
         trigger: "#cta",
         start: "top bottom",
@@ -811,14 +864,12 @@ export default function Scene() {
         scrub: 1,
         onEnter: () => {
           setSkeletonBlend(0);
-          transitionToAnimation('idel', 0.6);
         },
         onEnterBack: () => {
           setSkeletonBlend(0);
-          transitionToAnimation('idel', 0.6);
         },
         onLeaveBack: () => {
-          transitionToAnimation('idel', 0.6);
+          setSkeletonBlend(0);
         },
       },
     });
@@ -846,16 +897,18 @@ export default function Scene() {
 
   return (
     <>
-      {/* Muscular Model: Exact original position untouched */}
-      <group ref={modelRef} position={[1.18, -0.85, 0]} scale={[0.68, 0.68, 0.68]}>
-        <primitive object={scene} />
+      {/* Muscular Model: Smoothly positioned by GSAP, inner group holds micro-breathing & parallax */}
+      <group ref={modelRef} position={[0.85, -0.85, 0]} scale={[0.68, 0.68, 0.68]}>
+        <group ref={innerModelRef}>
+          <primitive object={scene} />
+        </group>
       </group>
 
-      {/* Real Anatomical Human Skeleton: Independent absolute position & scale, placed higher where it was before */}
+      {/* Real Anatomical Human Skeleton: Exactly aligned with muscular model */}
       <group
         ref={skeletonGroupRef}
-        position={[0.65, -0.10, 0.1]}
-        scale={[0.72, 0.72, 0.72]}
+        position={[0.85, -0.85, 0.1]}
+        scale={[0.68, 0.68, 0.68]}
         visible={false}
       >
         {skeletonObj && <primitive object={skeletonObj} />}
